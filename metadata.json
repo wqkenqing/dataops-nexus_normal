@@ -1,0 +1,5 @@
+{
+  "name": "DataOps Nexus",
+  "description": "A professional Data Operations dashboard for managing Elasticsearch, Kafka, and ClickHouse clusters with AI-assisted insights.",
+  "requestFramePermissions": []
+}
