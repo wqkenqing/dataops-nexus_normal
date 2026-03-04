@@ -12,6 +12,8 @@ import AIChatPanel from './components/AIChatPanel';
 import DataCanvas from './components/DataCanvas';
 import DataLineage from './components/DataLineage';
 import NetworkCheckView from './components/NetworkCheckView';
+import OpenVPNManager from './components/OpenVPNManager';
+import SystemSettings from './components/SystemSettings';
 import { clickHouseClusters } from './services/mockData';
 import { fetchESClusterOverview, fetchKafkaClusters } from './services/api';
 import { ComponentType, Status, AnyCluster, ESCluster, KafkaCluster, ClickHouseCluster } from './types';
@@ -218,6 +220,8 @@ const Layout: React.FC<{
     if (path.includes('/elasticsearch')) return t('elasticsearch');
     if (path.includes('/kafka')) return t('kafka');
     if (path.includes('/clickhouse')) return t('clickhouse');
+    if (path.includes('/network/openvpn')) return t('networkManagement');
+    if (path.includes('/system/settings')) return t('systemSettings');
     return 'Ops Console';
   };
 
@@ -458,6 +462,14 @@ const AppContent: React.FC = () => {
                   <Route
                     path="/utilities/network/ping"
                     element={<NetworkCheckView />}
+                  />
+                  <Route
+                    path="/network/openvpn"
+                    element={<OpenVPNManager />}
+                  />
+                  <Route
+                    path="/system/settings"
+                    element={<SystemSettings />}
                   />
                 </Routes>
               </Layout>

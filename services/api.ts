@@ -10,15 +10,24 @@ const getSavedBackend = (): BackendType => {
       return saved;
     }
   }
-  return 'python'; // Default
+  return 'java'; // Default
 };
 
 let currentBackendType: BackendType = getSavedBackend();
 
+// Determine base URL dynamically. If in a browser environment, use the current host.
+// Fallback to localhost for SSR/Node environments if needed.
+const getHost = () => {
+  if (typeof window !== 'undefined') {
+    return window.location.hostname;
+  }
+  return '0.0.0.0';
+};
+
 // Initialize URL based on saved type
 let API_BASE_URL = currentBackendType === 'java'
-  ? 'http://0.0.0.0:8080/api/v1'
-  : 'http://0.0.0.0:8000/api/v1';
+  ? `http://${getHost()}:8080/api/v1`
+  : `http://${getHost()}:8000/api/v1`;
 
 // Event emitter for backend changes (simple version)
 type BackendChangeListener = (type: BackendType) => void;
@@ -32,9 +41,9 @@ export const setBackendType = (type: BackendType) => {
   currentBackendType = type;
 
   if (type === 'java') {
-    API_BASE_URL = 'http://0.0.0.0:8080/api/v1';
+    API_BASE_URL = `http://${getHost()}:8080/api/v1`;
   } else {
-    API_BASE_URL = 'http://0.0.0.0:8000/api/v1';
+    API_BASE_URL = `http://${getHost()}:8000/api/v1`;
   }
 
   console.log(`[Config] Switched backend to: ${type} (${API_BASE_URL})`);
@@ -1074,4 +1083,130 @@ export const fetchKafkaMessages = async (
     console.error('[API Failure] fetchKafkaMessages:', error);
     return { messages: [] };
   }
+};
+
+// ==========================================
+// OpenVPN Management APIs
+// ==========================================
+
+export interface OvpnConfig {
+    id: string;
+    name: string;
+    originalFilename: string;
+    status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING' | 'FAILED';
+    uploadTime: string;
+    lastConnectTime?: string;
+    ipAddress?: string;
+    lastError?: string;
+    configPath?: string;
+}
+
+export const uploadOvpnConfig = async (file: File): Promise<OvpnConfig | null> => {
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch(`${API_BASE_URL}/network/openvpn/upload`, {
+            method: 'POST',
+            body: formData,
+        });
+        const res = await response.json();
+        return res.code === 0 ? res.data : null;
+    } catch (e) {
+        console.error(e);
+        return null;
+    }
+};
+
+export const fetchOvpnConfigs = async (): Promise<OvpnConfig[]> => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/network/openvpn/list`);
+        const res = await response.json();
+        return res.code === 0 ? res.data : [];
+    } catch (e) {
+        console.error(e);
+        return [];
+    }
+};
+
+export const connectOvpn = async (id: string): Promise<OvpnConfig | null> => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/network/openvpn/${id}/connect`, { method: 'POST' });
+        const res = await response.json();
+        return res.code === 0 ? res.data : null;
+    } catch (e) {
+        console.error(e);
+        return null;
+    }
+};
+
+export const disconnectOvpn = async (id: string): Promise<OvpnConfig | null> => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/network/openvpn/${id}/disconnect`, { method: 'POST' });
+        const res = await response.json();
+        return res.code === 0 ? res.data : null;
+    } catch (e) {
+        console.error(e);
+        return null;
+    }
+};
+
+export const deleteOvpnConfig = async (id: string): Promise<boolean> => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/network/openvpn/${id}`, { method: 'DELETE' });
+        const res = await response.json();
+        return res.code === 0;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
+};
+
+export const fetchOvpnStatus = async (id: string): Promise<OvpnConfig | null> => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/network/openvpn/${id}/status`);
+        const res = await response.json();
+        return res.code === 0 ? res.data : null;
+    } catch (e) {
+        console.error(e);
+        return null;
+    }
+};
+
+export const fetchOvpnLogs = async (id: string, lines: number = 200): Promise<string[]> => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/network/openvpn/${id}/logs?lines=${lines}`);
+        const res = await response.json();
+        return res.code === 0 ? res.data : [];
+    } catch (e) {
+        console.error(e);
+        return [];
+    }
+};
+
+// ==========================================
+// System Backup APIs
+// ==========================================
+
+export const exportSystemArchive = (): void => {
+    // Standard browser download for files
+    window.location.href = `${API_BASE_URL}/system/backup/export`;
+};
+
+export const importSystemArchive = async (file: File): Promise<boolean> => {
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch(`${API_BASE_URL}/system/backup/import`, {
+            method: 'POST',
+            body: formData,
+        });
+        const res = await response.json();
+        if (response.ok && res.message) {
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
 };

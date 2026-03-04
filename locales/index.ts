@@ -40,6 +40,15 @@ export const resources = {
             upstream: "Upstream",
             downstream: "Downstream",
             "assetDetails": "Asset Details",
+            "networkManagement": "Network Management",
+            "openVpnManager": "OpenVPN Manager",
+            "uploadOvpn": "Upload .ovpn",
+            "connect": "Connect",
+            "disconnect": "Disconnect",
+            "status": "Status",
+            "connected": "Connected",
+            "disconnected": "Disconnected",
+            "ovpnFile": "OVPN File",
             "batchCreateTopics": "Batch Create Topics",
             "batchDelete": "Batch Delete",
             "searchTopics": "Search topics...",
@@ -144,7 +153,16 @@ export const resources = {
                 "feature2Title": "Real-time Monitoring",
                 "feature2Desc": "Keep track of cluster health and performance metrics instantly.",
                 "copyright": "© 2025 DataOps Nexus. All rights reserved."
-            }
+            },
+            "systemSettings": "System Settings",
+            "exportArchive": "Export Backup Archive",
+            "exportArchiveDesc": "Download a complete ZIP snapshot of all registered database clusters, data pipelines, and network rules.",
+            "importArchive": "Import Backup Archive",
+            "importArchiveDesc": "Safely restore the entire system configuration from a previously exported ZIP file.",
+            "dropArchiveHere": "Drop .zip archive here or click to browse",
+            "restoring": "Restoring Configuration...",
+            "restoreSuccess": "System successfully restored and rebooted.",
+            "restoreFailed": "Failed to restore system configuration."
         }
     },
     zh: {
@@ -188,6 +206,15 @@ export const resources = {
             upstream: "上游依赖",
             downstream: "下游影响",
             assetDetails: "资产详情",
+            networkManagement: "网络管理",
+            openVpnManager: "OpenVPN 管理",
+            uploadOvpn: "上传 .ovpn",
+            connect: "连接",
+            disconnect: "断开",
+            status: "状态",
+            connected: "已连接",
+            disconnected: "已断开",
+            ovpnFile: "OVPN 文件",
             "batchCreateTopics": "批量创建 Topic",
             "batchDelete": "批量删除",
             "searchTopics": "搜索 Topic...",
@@ -292,7 +319,16 @@ export const resources = {
                 "feature2Title": "实时监控",
                 "feature2Desc": "即时跟踪集群健康状况和性能指标。",
                 "copyright": "© 2025 DataOps Nexus. 保留所有权利。"
-            }
+            },
+            "systemSettings": "系统设置",
+            "exportArchive": "导出完整备份归档",
+            "exportArchiveDesc": "下载所有注册的数据库集群、数据同步链路以及网络配置通道的完整 ZIP 备份快照。",
+            "importArchive": "导入备份归档",
+            "importArchiveDesc": "将此前导出的 ZIP 备份文件重新覆盖恢复至系统核心元数据库。",
+            "dropArchiveHere": "拖拽 ZIP 归档包至此，或点击上传",
+            "restoring": "配置恢复中，请稍候...",
+            "restoreSuccess": "系统配置还原成功并已热重启。",
+            "restoreFailed": "未能还原系统配置，请检查日志或包格式。"
         }
     }
 };

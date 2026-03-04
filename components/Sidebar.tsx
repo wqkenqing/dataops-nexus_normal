@@ -14,7 +14,9 @@ import {
   LogOut,
   Wrench,
   Globe,
-  Radio
+  Radio,
+  Shield,
+  HardDrive
 } from 'lucide-react';
 import { NavItem } from '../types';
 import { useTranslation } from 'react-i18next';
@@ -72,6 +74,19 @@ const Sidebar: React.FC = () => {
       ]
     },
     {
+      id: 'network-mgmt',
+      label: t('networkManagement'),
+      icon: Shield,
+      children: [
+        {
+          id: 'openvpn-manager',
+          label: t('openVpnManager'),
+          path: '/network/openvpn',
+          icon: Shield
+        }
+      ]
+    },
+    {
       id: 'utilities',
       label: t('utilities'),
       icon: Wrench,
@@ -90,6 +105,12 @@ const Sidebar: React.FC = () => {
           ]
         }
       ]
+    },
+    {
+      id: 'system',
+      label: t('systemSettings'),
+      icon: HardDrive,
+      path: '/system/settings'
     }
   ], [t]);
 
