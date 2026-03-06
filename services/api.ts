@@ -2,7 +2,6 @@ import { ESCluster, ESIndex, ComponentType, Status, IndexMetadata, KafkaCluster,
 
 export type BackendType = 'python' | 'java';
 
-// Helper to get saved backend from localStorage (safe for SSR/Node if needed)
 const getSavedBackend = (): BackendType => {
   if (typeof window !== 'undefined' && window.localStorage) {
     const saved = localStorage.getItem('backendType');
@@ -13,21 +12,36 @@ const getSavedBackend = (): BackendType => {
   return 'java'; // Default
 };
 
-let currentBackendType: BackendType = getSavedBackend();
+// Application Environment Variables (Runtime takes precedence over Build-time)
+const getEnvConfig = () => {
+  if (typeof window !== 'undefined' && (window as any)._env_) {
+    return (window as any)._env_;
+  }
+  return import.meta.env;
+};
 
 // Determine base URL dynamically. If in a browser environment, use the current host.
-// Fallback to localhost for SSR/Node environments if needed.
 const getHost = () => {
   if (typeof window !== 'undefined') {
     return window.location.hostname;
   }
-  return '0.0.0.0';
+  return '127.0.0.1';
 };
 
 // Initialize URL based on saved type
-let API_BASE_URL = currentBackendType === 'java'
-  ? `http://${getHost()}:8080/api/v1`
-  : `http://${getHost()}:8000/api/v1`;
+const getApiBaseUrl = (type: BackendType) => {
+  const env = getEnvConfig();
+  const host = getHost();
+  if (type === 'java') {
+    return env.VITE_JAVA_API_URL || `http://${host}:8080/api/v1`;
+  } else {
+    return env.VITE_PYTHON_API_URL || `http://${host}:8000/api/v1`;
+  }
+};
+
+let currentBackendType: BackendType = getSavedBackend();
+
+let API_BASE_URL = getApiBaseUrl(currentBackendType);
 
 // Event emitter for backend changes (simple version)
 type BackendChangeListener = (type: BackendType) => void;
@@ -39,12 +53,7 @@ export const onBackendChange = (listener: BackendChangeListener) => {
 
 export const setBackendType = (type: BackendType) => {
   currentBackendType = type;
-
-  if (type === 'java') {
-    API_BASE_URL = `http://${getHost()}:8080/api/v1`;
-  } else {
-    API_BASE_URL = `http://${getHost()}:8000/api/v1`;
-  }
+  API_BASE_URL = getApiBaseUrl(type);
 
   console.log(`[Config] Switched backend to: ${type} (${API_BASE_URL})`);
 
@@ -61,6 +70,48 @@ interface ApiResponse<T> {
   data: T;
   trace_id: string;
 }
+
+// Wrapper for fetch that automatically injects the auth token
+export const fetchWithAuth = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const headers = new Headers(init?.headers);
+
+  // Get token from localStorage
+  if (typeof window !== 'undefined') {
+    const storedAuth = localStorage.getItem('nexus_auth');
+    if (storedAuth) {
+      try {
+        const parsedAuth = JSON.parse(storedAuth);
+        if (parsedAuth.token) {
+          headers.set('Authorization', `Bearer ${parsedAuth.token}`);
+        }
+      } catch (e) {
+        console.error('Failed to parse auth token', e);
+      }
+    }
+  }
+
+  const modifiedInit = {
+    ...init,
+    headers,
+  };
+
+  const response = await fetch(input, modifiedInit);
+  
+  // Debugging aid for interceptor rejections
+  if (response.status === 401) {
+    try {
+      const cloned = response.clone();
+      const errorBody = await cloned.text();
+      console.error(`[Auth Debug] 401 Unauthorized for ${input.toString()}`);
+      console.error(`[Auth Debug] Backend said: ${errorBody}`);
+      console.error(`[Auth Debug] Sent Authorization Header: ${modifiedInit.headers?.get('Authorization')}`);
+    } catch (e) {
+      // Ignore clone errors
+    }
+  }
+
+  return response;
+};
 
 // Backend specific interfaces
 interface BackendClusterConfig {
@@ -107,7 +158,7 @@ export const executeESSync = async (
 
     console.log(`[API] Executing ES Sync: ${url.toString()}`);
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithAuth(url.toString(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -134,7 +185,7 @@ export const fetchESClusterOverview = async (): Promise<ESCluster[]> => {
     const url = `${API_BASE_URL}/cluster/`;
     console.log(`[API] Fetching Clusters: ${url}`);
 
-    const response = await fetch(url);
+    const response = await fetchWithAuth(url);
 
     if (!response.ok) {
       console.error(`[API Error] Status: ${response.status} ${response.statusText} | URL: ${url}`);
@@ -198,7 +249,7 @@ export const fetchESIndices = async (clusterName: string): Promise<ESIndex[]> =>
     const url = `${API_BASE_URL}/es/${encodeURIComponent(clusterName)}/indices`;
     console.log(`[API] Fetching Indices: ${url}`);
 
-    const response = await fetch(url);
+    const response = await fetchWithAuth(url);
 
     if (!response.ok) {
       console.error(`[API Error] Status: ${response.status} ${response.statusText} | URL: ${url}`);
@@ -253,7 +304,7 @@ export const fetchESIndexMetadata = async (clusterId: string, indexName: string)
     const url = `${API_BASE_URL}/es/${encodeURIComponent(clusterId)}/index/${encodeURIComponent(indexName)}`;
     console.log(`[API] Fetching Index Metadata: ${url}`);
 
-    const response = await fetch(url);
+    const response = await fetchWithAuth(url);
 
     if (!response.ok) {
       console.error(`[API Error] Status: ${response.status} ${response.statusText} | URL: ${url}`);
@@ -301,7 +352,7 @@ export const fetchESData = async (
 
     console.log(`[API] Fetching ES Data: ${url.toString()}`);
 
-    const response = await fetch(url.toString());
+    const response = await fetchWithAuth(url.toString());
 
     if (!response.ok) {
       console.error(`[API Error] Status: ${response.status} ${response.statusText} | URL: ${url.toString()}`);
@@ -336,7 +387,7 @@ export const executeESQuery = async (
     const url = `${API_BASE_URL}/es/${encodeURIComponent(clusterId)}/console`;
     console.log(`[API] Executing ES Console: ${method} ${path}`);
 
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -367,7 +418,7 @@ export const checkConnectivity = async (ip: string, timeout: number = 2000): Pro
     const url = `${API_BASE_URL}/tools/network/ping?ip=${encodeURIComponent(ip)}&timeout=${timeout}`;
     console.log(`[API] Checking connectivity: GET ${url}`);
 
-    const response = await fetch(url);
+    const response = await fetchWithAuth(url);
     if (!response.ok) {
       // Backend might still return 404/500 which we should treat as "failure" in UI
       return { success: false, message: `Status: ${response.status}` };
@@ -427,7 +478,7 @@ export const addCluster = async (payload: AddClusterPayload): Promise<BackendClu
     const url = `${API_BASE_URL}/cluster/`;
     console.log(`[API] Adding Cluster: ${url}`, payload);
 
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -459,7 +510,7 @@ export const updateCluster = async (clusterId: string, payload: AddClusterPayloa
     const url = `${API_BASE_URL}/cluster/${encodeURIComponent(clusterId)}`;
     console.log(`[API] Updating Cluster: ${url}`, payload);
 
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -491,7 +542,7 @@ export const deleteCluster = async (clusterId: string): Promise<boolean> => {
     const url = `${API_BASE_URL}/cluster/${encodeURIComponent(clusterId)}`;
     console.log(`[API] Deleting Cluster: ${url}`);
 
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: 'DELETE'
     });
 
@@ -521,7 +572,7 @@ export const fetchESSyncTasks = async (): Promise<BackendSyncTask[]> => {
     const url = `${API_BASE_URL}/es/tasks`;
     console.log(`[API] Fetching Sync Tasks: ${url}`);
 
-    const response = await fetch(url);
+    const response = await fetchWithAuth(url);
 
     if (!response.ok) {
       console.error(`[API Error] Status: ${response.status} ${response.statusText}`);
@@ -552,7 +603,7 @@ export const fetchESSyncTaskById = async (taskId: string): Promise<BackendSyncTa
     const url = `${API_BASE_URL}/es/tasks/${encodeURIComponent(taskId)}`;
     console.log(`[API] Fetching Sync Task Status: ${url}`);
 
-    const response = await fetch(url);
+    const response = await fetchWithAuth(url);
     if (!response.ok) {
       console.error(`[API Error] Status: ${response.status} ${response.statusText} | URL: ${url}`);
       return null;
@@ -586,7 +637,7 @@ export const createESSyncTask = async (
 
     console.log(`[API] Creating Sync Task: ${url.toString()}`, payload);
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithAuth(url.toString(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -627,7 +678,7 @@ export const updateESSyncTask = async (
 
     console.log(`[API] Updating Sync Task: ${url.toString()}`, payload);
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithAuth(url.toString(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -673,7 +724,7 @@ export const fetchKafkaClusters = async (): Promise<KafkaCluster[]> => {
     const url = `${API_BASE_URL}/kafka/cluster/list`;
     console.log(`[API] Fetching Kafka Clusters: ${url}`);
 
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: 'POST'
     });
 
@@ -746,7 +797,7 @@ export const addKafkaCluster = async (name: string, bootstrapServers: string): P
 
     console.log(`[API] Adding Kafka Cluster: ${url.toString()}`);
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithAuth(url.toString(), {
       method: 'POST'
     });
 
@@ -782,7 +833,7 @@ export const updateKafkaCluster = async (clusterId: string, name: string, bootst
 
     console.log(`[API] Updating Kafka Cluster (JSON): ${url}`, payload);
 
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -815,7 +866,7 @@ export const deleteKafkaCluster = async (clusterId: string): Promise<boolean> =>
     const url = `${API_BASE_URL}/kafka/cluster/${encodeURIComponent(clusterId)}`;
     console.log(`[API] Deleting Kafka Cluster: ${url}`);
 
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: 'DELETE'
     });
 
@@ -856,7 +907,7 @@ export const fetchKafkaTopics = async (clusterId: string): Promise<KafkaTopic[]>
     const url = `${API_BASE_URL}/kafka/${encodeURIComponent(clusterId)}/topics`;
     console.log(`[API] Fetching Kafka Topics: ${url}`);
 
-    const response = await fetch(url);
+    const response = await fetchWithAuth(url);
 
     if (!response.ok) {
       console.error(`[API Error] Status: ${response.status} ${response.statusText}`);
@@ -899,7 +950,7 @@ export const fetchKafkaTopicConsumers = async (clusterId: string, topicName: str
     const url = `${API_BASE_URL}/kafka/${encodeURIComponent(clusterId)}/topics/${encodeURIComponent(topicName)}/groups`;
     console.log(`[API] Fetching Topic Consumers: ${url}`);
 
-    const response = await fetch(url);
+    const response = await fetchWithAuth(url);
 
     if (!response.ok) {
       console.error(`[API Error] Status: ${response.status} ${response.statusText}`);
@@ -939,7 +990,7 @@ export const createKafkaTopics = async (clusterId: string, payload: CreateKafkaT
     const url = `${API_BASE_URL}/kafka/${encodeURIComponent(clusterId)}/topics/create`;
     console.log(`[API] Creating Kafka Topics: ${url}`, payload);
 
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -971,7 +1022,7 @@ export const deleteKafkaTopics = async (clusterId: string, topics: string[]): Pr
     const url = `${API_BASE_URL}/kafka/${encodeURIComponent(clusterId)}/topics/delete`;
     console.log(`[API] Deleting Kafka Topics: ${url}`, topics);
 
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -1031,7 +1082,7 @@ export const fetchKafkaMessages = async (
 
     console.log(`[API] Fetching Kafka Messages: ${url.toString()}`);
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithAuth(url.toString(), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json'
@@ -1090,97 +1141,97 @@ export const fetchKafkaMessages = async (
 // ==========================================
 
 export interface OvpnConfig {
-    id: string;
-    name: string;
-    originalFilename: string;
-    status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING' | 'FAILED';
-    uploadTime: string;
-    lastConnectTime?: string;
-    ipAddress?: string;
-    lastError?: string;
-    configPath?: string;
+  id: string;
+  name: string;
+  originalFilename: string;
+  status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING' | 'FAILED';
+  uploadTime: string;
+  lastConnectTime?: string;
+  ipAddress?: string;
+  lastError?: string;
+  configPath?: string;
 }
 
 export const uploadOvpnConfig = async (file: File): Promise<OvpnConfig | null> => {
-    try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const response = await fetch(`${API_BASE_URL}/network/openvpn/upload`, {
-            method: 'POST',
-            body: formData,
-        });
-        const res = await response.json();
-        return res.code === 0 ? res.data : null;
-    } catch (e) {
-        console.error(e);
-        return null;
-    }
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetchWithAuth(`${API_BASE_URL}/network/openvpn/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    const res = await response.json();
+    return res.code === 0 ? res.data : null;
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
 };
 
 export const fetchOvpnConfigs = async (): Promise<OvpnConfig[]> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/network/openvpn/list`);
-        const res = await response.json();
-        return res.code === 0 ? res.data : [];
-    } catch (e) {
-        console.error(e);
-        return [];
-    }
+  try {
+    const response = await fetchWithAuth(`${API_BASE_URL}/network/openvpn/list`);
+    const res = await response.json();
+    return res.code === 0 ? res.data : [];
+  } catch (e) {
+    console.error(e);
+    return [];
+  }
 };
 
 export const connectOvpn = async (id: string): Promise<OvpnConfig | null> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/network/openvpn/${id}/connect`, { method: 'POST' });
-        const res = await response.json();
-        return res.code === 0 ? res.data : null;
-    } catch (e) {
-        console.error(e);
-        return null;
-    }
+  try {
+    const response = await fetchWithAuth(`${API_BASE_URL}/network/openvpn/${id}/connect`, { method: 'POST' });
+    const res = await response.json();
+    return res.code === 0 ? res.data : null;
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
 };
 
 export const disconnectOvpn = async (id: string): Promise<OvpnConfig | null> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/network/openvpn/${id}/disconnect`, { method: 'POST' });
-        const res = await response.json();
-        return res.code === 0 ? res.data : null;
-    } catch (e) {
-        console.error(e);
-        return null;
-    }
+  try {
+    const response = await fetchWithAuth(`${API_BASE_URL}/network/openvpn/${id}/disconnect`, { method: 'POST' });
+    const res = await response.json();
+    return res.code === 0 ? res.data : null;
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
 };
 
 export const deleteOvpnConfig = async (id: string): Promise<boolean> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/network/openvpn/${id}`, { method: 'DELETE' });
-        const res = await response.json();
-        return res.code === 0;
-    } catch (e) {
-        console.error(e);
-        return false;
-    }
+  try {
+    const response = await fetchWithAuth(`${API_BASE_URL}/network/openvpn/${id}`, { method: 'DELETE' });
+    const res = await response.json();
+    return res.code === 0;
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
 };
 
 export const fetchOvpnStatus = async (id: string): Promise<OvpnConfig | null> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/network/openvpn/${id}/status`);
-        const res = await response.json();
-        return res.code === 0 ? res.data : null;
-    } catch (e) {
-        console.error(e);
-        return null;
-    }
+  try {
+    const response = await fetchWithAuth(`${API_BASE_URL}/network/openvpn/${id}/status`);
+    const res = await response.json();
+    return res.code === 0 ? res.data : null;
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
 };
 
 export const fetchOvpnLogs = async (id: string, lines: number = 200): Promise<string[]> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/network/openvpn/${id}/logs?lines=${lines}`);
-        const res = await response.json();
-        return res.code === 0 ? res.data : [];
-    } catch (e) {
-        console.error(e);
-        return [];
-    }
+  try {
+    const response = await fetchWithAuth(`${API_BASE_URL}/network/openvpn/${id}/logs?lines=${lines}`);
+    const res = await response.json();
+    return res.code === 0 ? res.data : [];
+  } catch (e) {
+    console.error(e);
+    return [];
+  }
 };
 
 // ==========================================
@@ -1188,25 +1239,151 @@ export const fetchOvpnLogs = async (id: string, lines: number = 200): Promise<st
 // ==========================================
 
 export const exportSystemArchive = (): void => {
-    // Standard browser download for files
-    window.location.href = `${API_BASE_URL}/system/backup/export`;
+  // Standard browser download for files
+  window.location.href = `${API_BASE_URL}/system/backup/export`;
 };
 
 export const importSystemArchive = async (file: File): Promise<boolean> => {
-    try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const response = await fetch(`${API_BASE_URL}/system/backup/import`, {
-            method: 'POST',
-            body: formData,
-        });
-        const res = await response.json();
-        if (response.ok && res.message) {
-            return true;
-        }
-        return false;
-    } catch (e) {
-        console.error(e);
-        return false;
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetchWithAuth(`${API_BASE_URL}/system/backup/import`, {
+      method: 'POST',
+      body: formData,
+    });
+    const res = await response.json();
+    if (response.ok && res.message) {
+      return true;
     }
+    return false;
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
 };
+
+export const getSystemConfig = async (): Promise<any> => {
+  try {
+    const response = await fetchWithAuth(`${API_BASE_URL}/system/config`);
+    return await response.json();
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+};
+
+export const testDbConnection = async (mysqlConfig: any): Promise<{ success: boolean, message: string }> => {
+  try {
+    const response = await fetchWithAuth(`${API_BASE_URL}/system/config/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(mysqlConfig),
+    });
+    return await response.json();
+  } catch (e: any) {
+    console.error(e);
+    return { success: false, message: e.message || 'Connection test failed' };
+  }
+};
+
+export const initSystemConfig = async (prefs: any): Promise<{ success: boolean, message: string }> => {
+  try {
+    const response = await fetchWithAuth(`${API_BASE_URL}/system/config/init`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(prefs),
+    });
+    return await response.json();
+  } catch (e: any) {
+    console.error(e);
+    return { success: false, message: e.message || 'Failed to initialize settings' };
+  }
+};
+
+// ==========================================
+// User Management APIs
+// ==========================================
+
+export interface SystemUser {
+  id: number;
+  username: string;
+  email: string;
+  role: string;
+  createdAt?: string;
+}
+
+export const fetchUsers = async (): Promise<SystemUser[]> => {
+  try {
+    // Point directly to the Centralized Auth Center, scoped by clientId via Env
+    const env = getEnvConfig();
+    const host = getHost();
+    const authApiUrl = env.VITE_AUTH_API_URL || `http://${host}:8081`;
+    const clientId = env.VITE_AUTH_CLIENT_ID || '231814316654413e';
+    const url = `${authApiUrl}/api/auth/users?clientId=${clientId}`;
+    console.log(`[API] Fetching users: ${url}`);
+
+    const response = await fetchWithAuth(url);
+    if (!response.ok) {
+      console.error(`[API Error] Status: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const data = await response.json();
+    return data || [];
+  } catch (error) {
+    console.error('[API Failure] fetchUsers:', error);
+    return [];
+  }
+};
+
+export const deleteUser = async (userId: number): Promise<boolean> => {
+  try {
+    // Point strictly to Auth Center via Env
+    const env = getEnvConfig();
+    const host = getHost();
+    const authApiUrl = env.VITE_AUTH_API_URL || `http://${host}:8081`;
+    const url = `${authApiUrl}/api/auth/users/${userId}`;
+    console.log(`[API] Deleting user: ${url}`);
+
+    const response = await fetchWithAuth(url, { method: 'DELETE' });
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[API Error] Delete failed: ${errorText}`);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('[API Failure] deleteUser:', error);
+    return false;
+  }
+};
+
+export const updateUserPassword = async (userId: number, newPassword: string): Promise<boolean> => {
+  try {
+    // Point strictly to Auth Center via Env
+    const env = getEnvConfig();
+    const host = getHost();
+    const authApiUrl = env.VITE_AUTH_API_URL || `http://${host}:8081`;
+    const url = `${authApiUrl}/api/auth/users/${userId}/password`;
+    console.log(`[API] Updating password for user: ${url}`);
+
+    const response = await fetchWithAuth(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newPassword })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[API Error] Update password failed: ${errorText}`);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('[API Failure] updateUserPassword:', error);
+    return false;
+  }
+};
+

@@ -13,7 +13,9 @@ import DataCanvas from './components/DataCanvas';
 import DataLineage from './components/DataLineage';
 import NetworkCheckView from './components/NetworkCheckView';
 import OpenVPNManager from './components/OpenVPNManager';
-import SystemSettings from './components/SystemSettings';
+import SystemPersistence from './components/SystemPersistence';
+import UserManagement from './components/UserManagement';
+import SystemBackup from './components/SystemBackup';
 import { clickHouseClusters } from './services/mockData';
 import { fetchESClusterOverview, fetchKafkaClusters } from './services/api';
 import { ComponentType, Status, AnyCluster, ESCluster, KafkaCluster, ClickHouseCluster } from './types';
@@ -221,7 +223,9 @@ const Layout: React.FC<{
     if (path.includes('/kafka')) return t('kafka');
     if (path.includes('/clickhouse')) return t('clickhouse');
     if (path.includes('/network/openvpn')) return t('networkManagement');
-    if (path.includes('/system/settings')) return t('systemSettings');
+    if (path.includes('/system/settings/persistence')) return 'Persistence Engine';
+    if (path.includes('/system/settings/users')) return 'User Management';
+    if (path.includes('/system/settings/backup')) return 'Backup & Restore';
     return 'Ops Console';
   };
 
@@ -322,19 +326,21 @@ const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) =
   return children;
 };
 
-const AppContent: React.FC = () => {
-  // Global State
+// Inner component that lives INSIDE Router so useLocation() works
+const AppRoutes: React.FC = () => {
   const { backend } = useBackend();
+  const location = useLocation();
 
-  // State for clusters
   const [esList, setEsList] = useState<ESCluster[]>([]);
   const [kafkaList, setKafkaList] = useState<KafkaCluster[]>([]);
   const [chList, setChList] = useState<ClickHouseCluster[]>(clickHouseClusters);
 
-  // Load real ES and Kafka clusters on mount
+  const [esLoaded, setEsLoaded] = useState(false);
+  const [kafkaLoaded, setKafkaLoaded] = useState(false);
+
+  // Lazy load Elasticsearch data only when navigating to ES pages
   useEffect(() => {
-    const loadData = async () => {
-      // 1. Elasticsearch
+    const loadESData = async () => {
       const realES = await fetchESClusterOverview();
       if (realES && realES.length > 0) {
         setEsList(prev => {
@@ -343,15 +349,28 @@ const AppContent: React.FC = () => {
           return [...prev, ...newClusters];
         });
       }
+    };
 
-      // 2. Kafka
+    if (location.pathname.startsWith('/elasticsearch') && !esLoaded) {
+      loadESData();
+      setEsLoaded(true);
+    }
+  }, [location.pathname, backend, esLoaded]);
+
+  // Lazy load Kafka data only when navigating to Kafka pages
+  useEffect(() => {
+    const loadKafkaData = async () => {
       const realKafka = await fetchKafkaClusters();
       if (realKafka && realKafka.length > 0) {
         setKafkaList(realKafka);
       }
     };
-    loadData();
-  }, [backend]);
+
+    if (location.pathname.startsWith('/kafka') && !kafkaLoaded) {
+      loadKafkaData();
+      setKafkaLoaded(true);
+    }
+  }, [location.pathname, backend, kafkaLoaded]);
 
   const handleAddCluster = (cluster: AnyCluster) => {
     switch (cluster.type) {
@@ -388,95 +407,110 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
 
-        <Route
-          path="/*"
-          element={
-            <RequireAuth>
-              <Layout esData={esList} kafkaData={kafkaList} chData={chList}>
-                <Routes>
-                  <Route path="/" element={<DashboardHome esCount={esList.length} kafkaCount={kafkaList.length} chCount={chList.length} />} />
-                  <Route
-                    path="/elasticsearch"
-                    element={
-                      <ClusterTable
-                        type={ComponentType.ELASTICSEARCH}
-                        data={esList}
-                        onAddCluster={handleAddCluster}
-                        onEditCluster={handleUpdateCluster}
-                        onDeleteCluster={handleDeleteCluster}
-                      />
-                    }
-                  />
-                  <Route
-                    path="/elasticsearch/:clusterId"
-                    element={<ESIndicesTable clusters={esList} />}
-                  />
-                  <Route
-                    path="/elasticsearch/compare"
-                    element={<ESCompareView clusters={esList} />}
-                  />
-                  <Route
-                    path="/elasticsearch/sync"
-                    element={<ESSyncView clusters={esList} />}
-                  />
-                  <Route
-                    path="/kafka"
-                    element={
-                      <ClusterTable
-                        type={ComponentType.KAFKA}
-                        data={kafkaList}
-                        onAddCluster={handleAddCluster}
-                        onEditCluster={handleUpdateCluster}
-                        onDeleteCluster={handleDeleteCluster}
-                      />
-                    }
-                  />
-                  <Route
-                    path="/kafka/:clusterId"
-                    element={<KafkaTopicsTable clusters={kafkaList} />}
-                  />
-                  <Route
-                    path="/clickhouse"
-                    element={
-                      <ClusterTable
-                        type={ComponentType.CLICKHOUSE}
-                        data={chList}
-                        onAddCluster={handleAddCluster}
-                        onEditCluster={handleUpdateCluster}
-                        onDeleteCluster={handleDeleteCluster}
-                      />
-                    }
-                  />
-                  <Route
-                    path="/data-app/canvas"
-                    element={<DataCanvas />}
-                  />
-                  <Route
-                    path="/data-app/lineage"
-                    element={<DataLineage />}
-                  />
-                  <Route
-                    path="/utilities/network/ping"
-                    element={<NetworkCheckView />}
-                  />
-                  <Route
-                    path="/network/openvpn"
-                    element={<OpenVPNManager />}
-                  />
-                  <Route
-                    path="/system/settings"
-                    element={<SystemSettings />}
-                  />
-                </Routes>
-              </Layout>
-            </RequireAuth>
-          }
-        />
-      </Routes>
+      <Route
+        path="/*"
+        element={
+          <RequireAuth>
+            <Layout esData={esList} kafkaData={kafkaList} chData={chList}>
+              <Routes>
+                <Route path="/" element={<DashboardHome esCount={esList.length} kafkaCount={kafkaList.length} chCount={chList.length} />} />
+                <Route
+                  path="/elasticsearch"
+                  element={
+                    <ClusterTable
+                      type={ComponentType.ELASTICSEARCH}
+                      data={esList}
+                      onAddCluster={handleAddCluster}
+                      onEditCluster={handleUpdateCluster}
+                      onDeleteCluster={handleDeleteCluster}
+                    />
+                  }
+                />
+                <Route
+                  path="/elasticsearch/:clusterId"
+                  element={<ESIndicesTable clusters={esList} />}
+                />
+                <Route
+                  path="/elasticsearch/compare"
+                  element={<ESCompareView clusters={esList} />}
+                />
+                <Route
+                  path="/elasticsearch/sync"
+                  element={<ESSyncView clusters={esList} />}
+                />
+                <Route
+                  path="/kafka"
+                  element={
+                    <ClusterTable
+                      type={ComponentType.KAFKA}
+                      data={kafkaList}
+                      onAddCluster={handleAddCluster}
+                      onEditCluster={handleUpdateCluster}
+                      onDeleteCluster={handleDeleteCluster}
+                    />
+                  }
+                />
+                <Route
+                  path="/kafka/:clusterId"
+                  element={<KafkaTopicsTable clusters={kafkaList} />}
+                />
+                <Route
+                  path="/clickhouse"
+                  element={
+                    <ClusterTable
+                      type={ComponentType.CLICKHOUSE}
+                      data={chList}
+                      onAddCluster={handleAddCluster}
+                      onEditCluster={handleUpdateCluster}
+                      onDeleteCluster={handleDeleteCluster}
+                    />
+                  }
+                />
+                <Route
+                  path="/data-app/canvas"
+                  element={<DataCanvas />}
+                />
+                <Route
+                  path="/data-app/lineage"
+                  element={<DataLineage />}
+                />
+                <Route
+                  path="/utilities/network/ping"
+                  element={<NetworkCheckView />}
+                />
+                <Route
+                  path="/network/openvpn"
+                  element={<OpenVPNManager />}
+                />
+                <Route
+                  path="/system/settings/persistence"
+                  element={<SystemPersistence />}
+                />
+                <Route
+                  path="/system/settings/users"
+                  element={<UserManagement />}
+                />
+                <Route
+                  path="/system/settings/backup"
+                  element={<SystemBackup />}
+                />
+              </Routes>
+            </Layout>
+          </RequireAuth>
+        }
+      />
+    </Routes>
+  );
+};
+
+// Outer shell: provides Router context
+const AppContent: React.FC = () => {
+  return (
+    <Router>
+      <AppRoutes />
     </Router>
   );
 };

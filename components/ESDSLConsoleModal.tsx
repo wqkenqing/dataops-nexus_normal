@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Play, Terminal, Database, Loader2, AlertCircle, Copy, Check, FileJson, Clock, BarChart3, PieChart, LayoutPanelTop, Activity } from 'lucide-react';
+import { X, Play, Terminal, Database, Loader2, AlertCircle, Copy, Check, FileJson, Clock, BarChart3, PieChart, LayoutPanelTop, Activity, Download } from 'lucide-react';
 import { executeESQuery } from '../services/api';
 
 const VisualizationPanel: React.FC<{ data: any }> = ({ data }) => {
@@ -214,29 +214,100 @@ const ESDSLConsoleModal: React.FC<ESDSLConsoleModalProps> = ({
         }
     };
 
-    const handleCopy = () => {
+    const handleCopy = async () => {
         if (!result) return;
-        navigator.clipboard.writeText(JSON.stringify(result, null, 2));
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        const textToCopy = JSON.stringify(result, null, 2);
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(textToCopy);
+            } else {
+                // Fallback for non-HTTPS environments
+                const textArea = document.createElement("textarea");
+                textArea.value = textToCopy;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-999999px";
+                textArea.style.top = "-999999px";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                } catch (err) {
+                    console.error('Fallback: Oops, unable to copy', err);
+                }
+                document.body.removeChild(textArea);
+            }
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy text: ', err);
+            alert('Copy failed. Please copy manually.');
+        }
+    };
+
+    const handleDownload = () => {
+        if (!result) return;
+        const jsonStr = JSON.stringify(result, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", url);
+        downloadAnchorNode.setAttribute("download", `es_result_${indexName || 'cluster'}_${Date.now()}.json`);
+        document.body.appendChild(downloadAnchorNode); // required for firefox
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+        URL.revokeObjectURL(url);
     };
 
     const templates = [
         {
             name: 'Match All',
-            dsl: { "query": { "match_all": {} }, "size": 10 }
+            dsl: { 
+                "query": { "match_all": {} }, 
+                "sort": [ { "@timestamp": { "order": "desc" } } ],
+                "size": 10 
+            }
         },
         {
             name: 'Search Term',
-            dsl: { "query": { "match": { "message": "error" } }, "size": 10 }
+            dsl: { 
+                "query": { "match": { "message": "error" } }, 
+                "sort": [ { "@timestamp": { "order": "desc" } } ],
+                "_source": ["@timestamp", "message", "level"],
+                "size": 10 
+            }
+        },
+        {
+            name: 'Bool Filter',
+            dsl: {
+                "query": {
+                    "bool": {
+                        "must": [ { "match": { "level": "ERROR" } } ],
+                        "filter": [ { "range": { "@timestamp": { "gte": "now-1h" } } } ]
+                    }
+                },
+                "sort": [ { "@timestamp": { "order": "desc" } } ],
+                "size": 10
+            }
         },
         {
             name: 'Aggregation',
-            dsl: { "aggs": { "status_counts": { "terms": { "field": "level.keyword" } } }, "size": 0 }
+            dsl: { 
+                "aggs": { 
+                    "status_counts": { 
+                        "terms": { "field": "level.keyword", "size": 10 } 
+                    } 
+                }, 
+                "size": 0 
+            }
         },
         {
             name: 'Range Query',
-            dsl: { "query": { "range": { "@timestamp": { "gte": "now-1d/d", "lt": "now/d" } } }, "size": 10 }
+            dsl: { 
+                "query": { "range": { "@timestamp": { "gte": "now-1d/d", "lt": "now/d" } } }, 
+                "sort": [ { "@timestamp": { "order": "desc" } } ],
+                "size": 10 
+            }
         }
     ];
 
@@ -347,13 +418,22 @@ const ESDSLConsoleModal: React.FC<ESDSLConsoleModalProps> = ({
                             </div>
 
                             {result && (
-                                <button
-                                    onClick={handleCopy}
-                                    className="text-slate-400 hover:text-white transition-colors p-1"
-                                    title="Copy result"
-                                >
-                                    {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                                </button>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={handleCopy}
+                                        className="text-slate-400 hover:text-white transition-colors p-1"
+                                        title="Copy result"
+                                    >
+                                        {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                                    </button>
+                                    <button
+                                        onClick={handleDownload}
+                                        className="text-slate-400 hover:text-white transition-colors p-1"
+                                        title="Download JSON result"
+                                    >
+                                        <Download size={14} />
+                                    </button>
+                                </div>
                             )}
                         </div>
 

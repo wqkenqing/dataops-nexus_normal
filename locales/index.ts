@@ -41,7 +41,7 @@ export const resources = {
             downstream: "Downstream",
             "assetDetails": "Asset Details",
             "networkManagement": "Network Management",
-            "openVpnManager": "OpenVPN Manager",
+            "openVpnManager": "Network Channel Management",
             "uploadOvpn": "Upload .ovpn",
             "connect": "Connect",
             "disconnect": "Disconnect",
@@ -162,7 +162,9 @@ export const resources = {
             "dropArchiveHere": "Drop .zip archive here or click to browse",
             "restoring": "Restoring Configuration...",
             "restoreSuccess": "System successfully restored and rebooted.",
-            "restoreFailed": "Failed to restore system configuration."
+            "restoreFailed": "Failed to restore system configuration.",
+            "persistenceEngine": "Persistence Engine",
+            "persistenceEngineDesc": "Configure where the application stores its internal configurations."
         }
     },
     zh: {
@@ -207,7 +209,7 @@ export const resources = {
             downstream: "下游影响",
             assetDetails: "资产详情",
             networkManagement: "网络管理",
-            openVpnManager: "OpenVPN 管理",
+            openVpnManager: "网络通道管理",
             uploadOvpn: "上传 .ovpn",
             connect: "连接",
             disconnect: "断开",
@@ -328,7 +330,9 @@ export const resources = {
             "dropArchiveHere": "拖拽 ZIP 归档包至此，或点击上传",
             "restoring": "配置恢复中，请稍候...",
             "restoreSuccess": "系统配置还原成功并已热重启。",
-            "restoreFailed": "未能还原系统配置，请检查日志或包格式。"
+            "restoreFailed": "未能还原系统配置，请检查日志或包格式。",
+            "persistenceEngine": "持久化引擎",
+            "persistenceEngineDesc": "配置应用程序存储其内部数据和配置的位置。"
         }
     }
 };

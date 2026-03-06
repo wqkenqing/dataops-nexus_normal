@@ -20,7 +20,7 @@ const LoginPage: React.FC = () => {
 
         setIsSubmitting(true);
         try {
-            await login(username);
+            await login(username, password);
             navigate('/');
         } catch (error) {
             console.error("Login failed", error);

@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 interface AuthContextType {
     isAuthenticated: boolean;
-    user: { name: string; role: string } | null;
-    login: (username: string) => Promise<void>;
+    user: { name: string; role: string; token: string } | null;
+    login: (username: string, password: string) => Promise<void>;
     logout: () => void;
     isLoading: boolean;
 }
@@ -12,7 +12,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [user, setUser] = useState<{ name: string; role: string } | null>(null);
+    const [user, setUser] = useState<{ name: string; role: string; token: string } | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
@@ -25,19 +25,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsLoading(false);
     }, []);
 
-    const login = async (username: string) => {
-        // Simulate API call delay
-        await new Promise(resolve => setTimeout(resolve, 800));
+    const login = async (username: string, password: string) => {
+        try {
+            // Retrieve Auth Configuration (Prioritize Runtime Env, then build-time, fallback to dynamic Window Hostname)
+            const env = (window as any)._env_ || import.meta.env;
+            const clientId = env.VITE_AUTH_CLIENT_ID || '231814316654413e';
+            const authApiUrl = env.VITE_AUTH_API_URL || `http://${window.location.hostname}:8081`;
+            
+            // Connect directly to the centralized Auth Service domain
+            const response = await fetch(`${authApiUrl}/api/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username, password, clientId })
+            });
 
-        // Mock successful login
-        const mockUser = {
-            name: username || 'Admin User',
-            role: 'DevOps Lead'
-        };
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || 'Login failed');
+            }
 
-        localStorage.setItem('nexus_auth', JSON.stringify(mockUser));
-        setUser(mockUser);
-        setIsAuthenticated(true);
+            const data = await response.json();
+
+            // Expected data format from AuthResponse: { token: '...', username: '...', role: '...' }
+            const authUser = {
+                name: data.username || username,
+                role: data.role || 'ROLE_USER',
+                token: data.token
+            };
+
+            localStorage.setItem('nexus_auth', JSON.stringify(authUser));
+            setUser(authUser);
+            setIsAuthenticated(true);
+        } catch (error) {
+            console.error('Login error:', error);
+            throw error;
+        }
     };
 
     const logout = () => {

@@ -50,6 +50,10 @@ const OpenVPNManager: React.FC = () => {
     const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
     const [showLogsMap, setShowLogsMap] = useState<Record<string, boolean>>({});
     const [isUploading, setIsUploading] = useState(false);
+    
+    // Modal State
+    const [configToDelete, setConfigToDelete] = useState<string | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const loadData = useCallback(async () => {
         const data = await fetchOvpnConfigs();
@@ -63,19 +67,44 @@ const OpenVPNManager: React.FC = () => {
 
     // Polling statuses
     useEffect(() => {
-        const interval = setInterval(async () => {
-            setConfigs(prev => {
-                prev.forEach(async (c) => {
+        let active = true;
+        
+        const pollStatus = async () => {
+            if (!active || configs.length === 0) return;
+            
+            // Only poll for configurations that are transitioning or currently connected to keep it light
+            const needsPolling = configs.some(c => c.status === 'CONNECTING' || c.status === 'CONNECTED');
+            if (!needsPolling) return;
+
+            const updates = await Promise.all(
+                configs.map(async (c) => {
                     const statusUpdate = await fetchOvpnStatus(c.id);
-                    if (statusUpdate && statusUpdate.status !== c.status) {
-                        setConfigs(currentList => currentList.map(item => item.id === c.id ? statusUpdate : item));
+                    return { id: c.id, update: statusUpdate };
+                })
+            );
+
+            if (!active) return;
+
+            setConfigs(prev => {
+                let hasChanges = false;
+                const next = prev.map(item => {
+                    const found = updates.find(u => u.id === item.id)?.update;
+                    if (found && found.status !== item.status) {
+                        hasChanges = true;
+                        return { ...item, ...found };
                     }
+                    return item;
                 });
-                return prev;
+                return hasChanges ? next : prev;
             });
-        }, 2500);
-        return () => clearInterval(interval);
-    }, []);
+        };
+
+        const interval = setInterval(pollStatus, 3000);
+        return () => {
+            active = false;
+            clearInterval(interval);
+        };
+    }, [configs]);
 
     const handleDrag = (e: React.DragEvent) => {
         e.preventDefault();
@@ -136,11 +165,23 @@ const OpenVPNManager: React.FC = () => {
         setLoadingMap(p => ({ ...p, [id]: false }));
     };
 
-    const handleDelete = async (id: string) => {
-        if (confirm('Are you sure you want to delete this configuration?')) {
-            await deleteOvpnConfig(id);
+    const handleDelete = (e: React.MouseEvent, id: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setConfigToDelete(id);
+    };
+
+    const confirmDelete = async () => {
+        if (!configToDelete) return;
+        setIsDeleting(true);
+        const success = await deleteOvpnConfig(configToDelete);
+        if (success) {
             loadData();
+        } else {
+            alert('Failed to delete configuration. File might be missing or server rejected the request.');
         }
+        setIsDeleting(false);
+        setConfigToDelete(null);
     };
 
     const toggleLogs = (id: string) => {
@@ -155,7 +196,7 @@ const OpenVPNManager: React.FC = () => {
                     <div>
                         <h2 className="text-3xl font-bold mb-2 flex items-center gap-3">
                             <Shield className="text-emerald-400" size={32} />
-                            OpenVPN Manager
+                            {t('openVpnManager')}
                         </h2>
                         <p className="text-emerald-100 max-w-xl">
                             Securely manage your network connections using OpenVPN profiles. Upload your configurations and manage connectivity status directly from this dashboard.
@@ -289,6 +330,7 @@ const OpenVPNManager: React.FC = () => {
 
                                                     <div className="flex items-center justify-end gap-2 ml-[64px] sm:ml-0">
                                                         <button
+                                                            type="button"
                                                             onClick={() => isConnected ? handleDisconnect(config.id) : handleConnect(config.id)}
                                                             disabled={isBusy}
                                                             className={`flex items-center justify-center w-10 h-10 rounded-lg transition-colors font-medium border disabled:opacity-50 disabled:cursor-not-allowed ${
@@ -302,6 +344,7 @@ const OpenVPNManager: React.FC = () => {
                                                         </button>
 
                                                         <button
+                                                            type="button"
                                                             onClick={() => toggleLogs(config.id)}
                                                             className={`flex items-center justify-center w-10 h-10 rounded-lg transition-colors border ${
                                                                 showLogsMap[config.id] 
@@ -314,7 +357,8 @@ const OpenVPNManager: React.FC = () => {
                                                         </button>
 
                                                         <button
-                                                            onClick={() => handleDelete(config.id)}
+                                                            type="button"
+                                                            onClick={(e) => handleDelete(e, config.id)}
                                                             className="flex items-center justify-center w-10 h-10 bg-white border border-gray-200 text-gray-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 rounded-lg transition-colors"
                                                             title="Delete Configuration"
                                                         >
@@ -342,6 +386,40 @@ const OpenVPNManager: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Delete Confirmation Modal */}
+            {configToDelete && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="p-6 text-center">
+                            <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <AlertTriangle size={24} />
+                            </div>
+                            <h3 className="text-lg font-bold text-gray-900 mb-2">Delete Configuration?</h3>
+                            <p className="text-sm text-gray-500 mb-6">
+                                Are you sure you want to delete this OpenVPN profile?<br />
+                                This action cannot be undone.
+                            </p>
+                            <div className="flex justify-center gap-3">
+                                <button
+                                    onClick={() => setConfigToDelete(null)}
+                                    disabled={isDeleting}
+                                    className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmDelete}
+                                    disabled={isDeleting}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm transition-colors flex items-center gap-2"
+                                >
+                                    {isDeleting ? 'Deleting...' : 'Delete'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

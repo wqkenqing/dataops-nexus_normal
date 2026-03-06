@@ -16,7 +16,10 @@ import {
   Globe,
   Radio,
   Shield,
-  HardDrive
+  HardDrive,
+  Database,
+  Users,
+  DownloadCloud
 } from 'lucide-react';
 import { NavItem } from '../types';
 import { useTranslation } from 'react-i18next';
@@ -64,15 +67,7 @@ const Sidebar: React.FC = () => {
         }
       ]
     },
-    {
-      id: 'data-app',
-      label: t('dataApplication'),
-      icon: LayoutTemplate,
-      children: [
-        { id: 'data-canvas', label: t('dataCanvas'), path: '/data-app/canvas', icon: Presentation },
-        { id: 'data-lineage', label: t('dataLineage'), path: '/data-app/lineage', icon: Workflow }
-      ]
-    },
+
     {
       id: 'network-mgmt',
       label: t('networkManagement'),
@@ -92,6 +87,15 @@ const Sidebar: React.FC = () => {
       icon: Wrench,
       children: [
         {
+          id: 'data-app',
+          label: t('dataApplication'),
+          icon: LayoutTemplate,
+          children: [
+            { id: 'data-canvas', label: t('dataCanvas'), path: '/data-app/canvas', icon: Presentation },
+            { id: 'data-lineage', label: t('dataLineage'), path: '/data-app/lineage', icon: Workflow }
+          ]
+        },
+        {
           id: 'network-tools',
           label: t('networkTools'),
           icon: Globe,
@@ -110,7 +114,26 @@ const Sidebar: React.FC = () => {
       id: 'system',
       label: t('systemSettings'),
       icon: HardDrive,
-      path: '/system/settings'
+      children: [
+        {
+          id: 'sys-persistence',
+          label: 'Persistence Engine',
+          path: '/system/settings/persistence',
+          icon: Database
+        },
+        {
+          id: 'sys-users',
+          label: 'User Management',
+          path: '/system/settings/users',
+          icon: Users
+        },
+        {
+          id: 'sys-backup',
+          label: 'Backup & Restore',
+          path: '/system/settings/backup',
+          icon: DownloadCloud
+        }
+      ]
     }
   ], [t]);
 
